@@ -32,9 +32,10 @@ jobs:
 
     env:
       SPRING_PROFILES_ACTIVE: dev
-      DB_URL: jdbc:postgresql://localhost:5432/notification_test
-      DB_USERNAME: notification_test
-      DB_PASSWORD: ci_test_only
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: notification_test
+      POSTGRES_USER: notification_test
+      POSTGRES_PASSWORD: ci_test_only
 
     steps:
       - name: Checkout source
