@@ -31,7 +31,7 @@ jobs:
           --health-retries 10
 
     env:
-      SPRING_PROFILES_ACTIVE: dev
+      SPRING_PROFILES_ACTIVE: test
       POSTGRES_PORT: "5432"
       POSTGRES_DB: notification_test
       POSTGRES_USER: notification_test
@@ -51,3 +51,11 @@ jobs:
 
       - name: Build and test
         run: bash ./mvnw --batch-mode --no-transfer-progress clean verify
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: notification-dispatcher/target/surefire-reports/
+          if-no-files-found: ignore
