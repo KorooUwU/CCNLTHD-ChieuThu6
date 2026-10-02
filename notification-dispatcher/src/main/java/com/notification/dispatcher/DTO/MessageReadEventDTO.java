@@ -18,7 +18,7 @@ public class MessageReadEventDTO {
     private String conversationId;
 
     @NotBlank(message = "Message ID không được để trống")
-    private String idMessage;
+    private String messageId;
 
     private String readerId;
     private LocalDateTime readAt;

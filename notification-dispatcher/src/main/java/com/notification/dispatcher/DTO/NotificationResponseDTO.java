@@ -11,9 +11,10 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+// DTO này được dùng để hiển thị thông tin của một thông báo
 public class NotificationResponseDTO {
 
-    private String idNotification;
+    private String notificationId;
     private String type; // loại thông báo
     private boolean isRead;
 
@@ -21,7 +22,7 @@ public class NotificationResponseDTO {
     private String senderId; // mapping sang userid gửi tin nhắn
     private String senderName; // mapping sang username gửi tin nhắn
 
-    private String MessageContent; // tin nhắn lấy từ Content trong bảng Message
+    private String messageContent; // tin nhắn lấy từ Content trong bảng Message
 
     private String conversationId;
     private LocalDateTime sendAt;

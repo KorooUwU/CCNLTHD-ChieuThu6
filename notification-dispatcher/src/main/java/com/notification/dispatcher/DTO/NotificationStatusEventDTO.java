@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 // DTO theo dõi vòng đời phát tán thông báo (PENDING, DISPATCHED, DELIVERED, FAILED)
 public class NotificationStatusEventDTO {
 
-    private String idNotification;
+    private String notificationId;
     private String status; // PENDING, DISPATCHED, DELIVERED, FAILED
     private LocalDateTime updatedAt;
     private String failureReason;

@@ -2,12 +2,18 @@
 // Là DTO dùng để truyền dữ liệu giữa các module
 package com.notification.dispatcher.DTO;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data 
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class CreateMessageNotificationDTO {
 
-    private String IdUser;
+    private String userId;
     private String triggeredByUserId;
     private String type;
 

@@ -10,11 +10,14 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+// DTO này được dùng để lấy danh sách các cuộc trò chuyện
+
 public class ConversationSummaryDTO {
-    private String idConversation; 
+    private String conversationId; 
 
     private String partnerId;
     private String partnerName;
+    private String partnerAvatarUrl;
 
     private String lastMessageContent;
     private LocalDateTime lastMessageAt;
