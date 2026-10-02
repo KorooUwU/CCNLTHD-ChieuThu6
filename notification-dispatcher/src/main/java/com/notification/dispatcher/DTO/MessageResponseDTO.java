@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+// DTO này được dùng để hiển thị thông tin của một tin nhắn
 public class MessageResponseDTO {
     private String idMessage;
     private String conversationId;
