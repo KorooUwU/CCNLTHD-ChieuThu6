@@ -1,0 +1,12 @@
+ .github/workflows/build-test.yml                   |  10 [32m++[m[31m-[m
+ README.md                                          |  75 [32m+++++++++++++++++++++[m
+ notification-dispatcher/.dockerignore              |   7 [32m++[m
+ notification-dispatcher/.env.example               |   3 [32m+[m[31m-[m
+ notification-dispatcher/.gitignore                 |   1 [32m+[m
+ notification-dispatcher/Dockerfile                 |  14 [32m++++[m
+ notification-dispatcher/compose.yaml               |  12 [32m++++[m
+ notification-dispatcher/run-error.log              | Bin [31m48070[m -> [32m0[m bytes
+ .../main/resources/application-docker.properties   |   5 [32m++[m
+ .../src/main/resources/application-test.properties |   5 [32m++[m
+ notification-dispatcher/startup-check.log          | Bin [31m15242[m -> [32m0[m bytes
+ 11 files changed, 130 insertions(+), 2 deletions(-)
