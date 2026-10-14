@@ -26,7 +26,7 @@ class AuthServiceTest {
     void setUp() {
         repository = mock(TaiKhoanRepository.class);
         encoder = new BCryptPasswordEncoder();
-        service = new AuthService(repository, encoder);
+        service = new AuthService(repository, encoder, mock(com.notification.dispatcher.security.JwtService.class));
     }
 
     private CreateUserRequestDTO request() {

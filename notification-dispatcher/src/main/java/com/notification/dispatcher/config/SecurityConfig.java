@@ -29,6 +29,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         var register = PathPatternRequestMatcher.withDefaults()
                 .matcher(HttpMethod.POST, "/api/auth/register");
+        var login = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/auth/login");
 
         http
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -36,15 +37,21 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
-                // Registration has no authenticated session/cookie to protect.
-                // Keep CSRF protection for other endpoints until JWT is implemented.
-                .csrf(csrf -> csrf.ignoringRequestMatchers(register))
+                // Authentication uses an explicit Bearer header, never browser cookies.
+                .csrf(AbstractHttpConfigurer::disable)
+                .oauth2ResourceServer(resource -> resource.jwt(org.springframework.security.config.Customizer.withDefaults())
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setHeader("WWW-Authenticate", "Bearer");
+                            writeError(response, objectMapper, 401, "UNAUTHORIZED", "Token không hợp lệ hoặc đã hết hạn");
+                        }))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(register).permitAll()
+                        .requestMatchers(register, login).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors
-                        .authenticationEntryPoint((request, response, exception) -> writeError(
-                                response, objectMapper, 401, "UNAUTHORIZED", "Bạn cần đăng nhập"))
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setHeader("WWW-Authenticate", "Bearer");
+                            writeError(response, objectMapper, 401, "UNAUTHORIZED", "Bạn cần đăng nhập");
+                        })
                         .accessDeniedHandler((request, response, exception) -> writeError(
                                 response, objectMapper, 403, "FORBIDDEN", "Bạn không có quyền thực hiện yêu cầu này")));
 

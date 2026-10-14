@@ -20,6 +20,10 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<Object> handleAuthentication(org.springframework.security.core.AuthenticationException exception) {
+        return error(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Thông tin đăng nhập không hợp lệ", null);
+    }
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(DuplicateAccountException.class)
