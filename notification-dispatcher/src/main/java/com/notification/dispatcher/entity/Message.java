@@ -37,6 +37,10 @@ public class Message {
     private String content;
 
     @Builder.Default
+    @Column(name = "type", nullable = false, length = 20)
+    private String type = "TEXT";
+
+    @Builder.Default
     @Column(name = "is_read", nullable = false)
     private boolean read = false;
 
@@ -45,9 +49,14 @@ public class Message {
     private Instant sentAt;
 
     public Message(Conversation conversation, TaiKhoan sender, String content) {
+        this(conversation, sender, content, "TEXT");
+    }
+
+    public Message(Conversation conversation, TaiKhoan sender, String content, String type) {
         this.conversation = conversation;
         this.sender = sender;
         this.content = content;
+        this.type = type != null ? type : "TEXT";
         this.read = false;
     }
 }
