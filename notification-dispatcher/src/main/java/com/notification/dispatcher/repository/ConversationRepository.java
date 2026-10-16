@@ -21,6 +21,13 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
 
        @Query("SELECT c FROM Conversation c WHERE " +
                      "c.user1.id = :userId OR c.user2.id = :userId " +
+                     "OR EXISTS (SELECT m.id FROM Conversation c2 JOIN c2.members m " +
+                     "WHERE c2.id = c.id AND m.id = :userId) " +
                      "ORDER BY coalesce(c.lastMessageAt, c.createdAt) DESC")
        List<Conversation> findAllByUserId(@Param("userId") UUID userId);
+
+       @Query("SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END " +
+                     "FROM Conversation c JOIN c.members m " +
+                     "WHERE c.id = :conversationId AND m.id = :userId")
+       boolean isMember(@Param("conversationId") UUID conversationId, @Param("userId") UUID userId);
 }
