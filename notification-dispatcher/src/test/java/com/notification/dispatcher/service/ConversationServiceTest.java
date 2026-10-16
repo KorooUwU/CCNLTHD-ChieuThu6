@@ -1,8 +1,10 @@
 package com.notification.dispatcher.service;
 
 import com.notification.dispatcher.entity.Conversation;
+import com.notification.dispatcher.entity.ConversationType;
 import com.notification.dispatcher.entity.Message;
 import com.notification.dispatcher.entity.TaiKhoan;
+import com.notification.dispatcher.DTO.CreateGroupConversationRequestDTO;
 import com.notification.dispatcher.exception.UserNotFoundException;
 import com.notification.dispatcher.repository.ConversationRepository;
 import com.notification.dispatcher.repository.MessageRepository;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -157,6 +160,68 @@ class ConversationServiceTest {
         assertNull(response.getFirst().getLastMessageContent());
         assertNull(response.getFirst().getLastMessageAt());
         assertEquals(0, response.getFirst().getUnreadCount());
+    }
+
+    @Test
+    void createsGroupWithCurrentUserAndRequestedMembers() {
+        UUID currentUserId = UUID.randomUUID();
+        UUID memberId = UUID.randomUUID();
+        TaiKhoan currentUser = user(currentUserId, "User A");
+        TaiKhoan member = user(memberId, "User B");
+        Conversation group = Conversation.group("Team", Set.of(currentUser, member));
+        group.setId(UUID.randomUUID());
+
+        when(taiKhoanRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(taiKhoanRepository.findById(memberId)).thenReturn(Optional.of(member));
+        when(conversationRepository.save(any(Conversation.class))).thenReturn(group);
+
+        var response = service.createGroupConversation(
+                currentUserId,
+                new CreateGroupConversationRequestDTO("Team", List.of(memberId.toString())));
+
+        assertEquals(group.getId().toString(), response.getConversationId());
+        assertEquals("Team", response.getGroupName());
+        assertEquals(2, response.getMembers().size());
+        assertEquals(ConversationType.GROUP, group.getType());
+    }
+
+    @Test
+    void addsMemberOnlyWhenCurrentUserIsInGroup() {
+        UUID currentUserId = UUID.randomUUID();
+        UUID newMemberId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        TaiKhoan currentUser = user(currentUserId, "User A");
+        TaiKhoan newMember = user(newMemberId, "User C");
+        Conversation group = Conversation.group("Team", Set.of(currentUser));
+        group.setId(conversationId);
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(group));
+        when(taiKhoanRepository.findById(newMemberId)).thenReturn(Optional.of(newMember));
+        when(conversationRepository.save(group)).thenReturn(group);
+
+        service.addGroupMember(currentUserId, conversationId, newMemberId);
+
+        assertTrue(group.getMembers().stream().anyMatch(member ->
+                member.getId().equals(newMemberId)));
+    }
+
+    @Test
+    void removesGroupMemberAndKeepsAtLeastOneMember() {
+        UUID currentUserId = UUID.randomUUID();
+        UUID memberId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        TaiKhoan currentUser = user(currentUserId, "User A");
+        TaiKhoan member = user(memberId, "User B");
+        Conversation group = Conversation.group("Team", Set.of(currentUser, member));
+        group.setId(conversationId);
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(group));
+        when(taiKhoanRepository.findById(memberId)).thenReturn(Optional.of(member));
+
+        service.removeGroupMember(currentUserId, conversationId, memberId);
+
+        assertEquals(Set.of(currentUser), group.getMembers());
+        verify(conversationRepository).save(group);
     }
 
     private TaiKhoan user(UUID id, String name) {
