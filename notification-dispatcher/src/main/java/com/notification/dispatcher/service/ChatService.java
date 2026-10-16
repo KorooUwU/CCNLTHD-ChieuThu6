@@ -1,32 +1,32 @@
 package com.notification.dispatcher.service;
 
-import com.notification.dispatcher.DTO.MessageResponseDTO;
-import com.notification.dispatcher.DTO.SendMessageRequestDTO;
+import com.notification.dispatcher.DTO.*;
 import com.notification.dispatcher.entity.Conversation;
 import com.notification.dispatcher.entity.Message;
+import com.notification.dispatcher.entity.Notification;
 import com.notification.dispatcher.entity.TaiKhoan;
+import com.notification.dispatcher.rabbitmq.RabbitMQProducer;
 import com.notification.dispatcher.repository.ConversationRepository;
 import com.notification.dispatcher.repository.MessageRepository;
+import com.notification.dispatcher.repository.NotificationRepository;
 import com.notification.dispatcher.repository.TaiKhoanRepository;
-import com.notification.dispatcher.websocket.UserPresenceService;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 /**
- * Xử lý nghiệp vụ chat: lưu tin nhắn vào DB và dispatch realtime qua WebSocket.
- *
- * <p>Sau khi lưu tin nhắn:
+ * Xử lý nghiệp vụ tin nhắn và cuộc trò chuyện:
  * <ul>
- *   <li>Cập nhật {@code lastMessageAt} của Conversation để sort inbox đúng thứ tự.</li>
- *   <li>Dispatch tin nhắn đến người nhận qua {@code /user/{recipientId}/queue/notifications}
- *       (dù họ có online hay không — nếu offline thì frame sẽ bị drop, cần polling
- *       REST API để lấy lịch sử khi vào lại app).</li>
+ *   <li>Lưu tin nhắn vào PostgreSQL</li>
+ *   <li>Cập nhật timestamp cuộc trò chuyện</li>
+ *   <li>Tạo notification cho người nhận</li>
+ *   <li>Publish sự kiện vào RabbitMQ để consumer phân phối tới SSE</li>
  * </ul>
  */
 @Service
@@ -35,101 +35,213 @@ public class ChatService {
     private final MessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
     private final TaiKhoanRepository taiKhoanRepository;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final UserPresenceService presenceService;
+    private final NotificationRepository notificationRepository;
+    private final RabbitMQProducer rabbitMQProducer;
 
     public ChatService(MessageRepository messageRepository,
                        ConversationRepository conversationRepository,
                        TaiKhoanRepository taiKhoanRepository,
-                       SimpMessagingTemplate messagingTemplate,
-                       UserPresenceService presenceService) {
+                       NotificationRepository notificationRepository,
+                       RabbitMQProducer rabbitMQProducer) {
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
         this.taiKhoanRepository = taiKhoanRepository;
-        this.messagingTemplate = messagingTemplate;
-        this.presenceService = presenceService;
+        this.notificationRepository = notificationRepository;
+        this.rabbitMQProducer = rabbitMQProducer;
     }
 
     /**
-     * Lưu tin nhắn vào DB và trả về DTO để dispatch qua STOMP.
-     *
-     * @param request  nội dung tin nhắn từ client
-     * @param senderId UUID của người gửi (lấy từ JWT principal)
-     * @return DTO chứa đầy đủ thông tin để broadcast
-     * @throws IllegalArgumentException nếu conversationId hoặc senderId không tồn tại
+     * Gửi tin nhắn mới: lưu DB, tạo notification và publish vào RabbitMQ.
      */
     @Transactional
-    public MessageResponseDTO persistMessage(SendMessageRequestDTO request, UUID senderId) {
+    public MessageResponseDTO sendMessage(SendMessageRequestDTO request, UUID senderId) {
         UUID conversationId = UUID.fromString(request.getConversationId());
 
         Conversation conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Conversation không tồn tại: " + conversationId));
+                .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại: " + conversationId));
 
         TaiKhoan sender = taiKhoanRepository.findById(senderId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Người dùng không tồn tại: " + senderId));
+                .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại: " + senderId));
 
-        // Kiểm tra sender có thuộc conversation này không
-        boolean isMember = sender.getId().equals(conversation.getUser1().getId())
-                || sender.getId().equals(conversation.getUser2().getId());
-        if (!isMember) {
-            throw new IllegalArgumentException("Bạn không thuộc cuộc trò chuyện này");
+        // Kiểm tra sender có thuộc conversation không
+        boolean isUser1 = conversation.getUser1().getId().equals(senderId);
+        boolean isUser2 = conversation.getUser2().getId().equals(senderId);
+        if (!isUser1 && !isUser2) {
+            throw new IllegalArgumentException("Bạn không phải thành viên của cuộc trò chuyện này");
         }
 
+        TaiKhoan recipient = isUser1 ? conversation.getUser2() : conversation.getUser1();
+        Instant now = Instant.now();
+
+        // 1. Lưu Message vào database
         Message message = Message.builder()
                 .conversation(conversation)
                 .sender(sender)
                 .content(request.getMessageContent())
                 .read(false)
+                .sentAt(now)
                 .build();
         message = messageRepository.save(message);
 
-        // Cập nhật timestamp để sort inbox theo tin nhắn mới nhất
-        conversation.setLastMessageAt(Instant.now());
+        // 2. Cập nhật thời điểm tin nhắn cuối của conversation
+        conversation.setLastMessageAt(now);
         conversationRepository.save(conversation);
 
-        return toDTO(message);
+        // 3. Tạo bản ghi Notification cho người nhận trong DB
+        Notification notification = Notification.builder()
+                .recipient(recipient)
+                .triggeredBy(sender)
+                .type("CHAT_MESSAGE")
+                .read(false)
+                .createdAt(now)
+                .build();
+        notification = notificationRepository.save(notification);
+
+        // 4. Chuyển đổi DTO
+        MessageResponseDTO messageResponse = toMessageDTO(message);
+        NotificationResponseDTO notificationResponse = NotificationResponseDTO.builder()
+                .notificationId(notification.getId().toString())
+                .type("CHAT_MESSAGE")
+                .isRead(false)
+                .senderId(sender.getId().toString())
+                .senderName(sender.getTenTaiKhoan())
+                .messageContent(message.getContent())
+                .conversationId(conversation.getId().toString())
+                .sendAt(LocalDateTime.ofInstant(now, ZoneOffset.UTC))
+                .build();
+
+        // 5. Publish vào RabbitMQ để chuyển tiếp tới SSE
+        rabbitMQProducer.sendChatMessage(recipient.getId(), messageResponse, senderId, conversation.getId());
+        rabbitMQProducer.sendNotification(recipient.getId(), notificationResponse, senderId);
+
+        return messageResponse;
     }
 
     /**
-     * Gửi tin nhắn đến người nhận qua personal WebSocket queue.
-     *
-     * <p>Destination: {@code /user/{recipientId}/queue/notifications}
-     * Client subscribe tại: {@code /user/queue/notifications}
-     * (Spring tự động map theo user principal).
-     *
-     * @param message     DTO của tin nhắn đã lưu
-     * @param senderId    UUID của người gửi để xác định người nhận
-     * @param conversation cuộc trò chuyện liên quan
+     * Phát sự kiện đang soạn tin (typing) qua RabbitMQ.
      */
-    public void pushToRecipient(MessageResponseDTO message, UUID senderId, Conversation conversation) {
+    @Transactional(readOnly = true)
+    public void sendTyping(TypingEventDTO event, UUID senderId) {
+        UUID conversationId = UUID.fromString(event.getConversationId());
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại"));
+
         TaiKhoan recipient = conversation.getUser1().getId().equals(senderId)
                 ? conversation.getUser2()
                 : conversation.getUser1();
 
-        // convertAndSendToUser sử dụng principal name (UUID string) để route đúng session
-        messagingTemplate.convertAndSendToUser(
-                recipient.getId().toString(),
-                "/queue/notifications",
-                message);
+        TypingEventDTO verified = TypingEventDTO.builder()
+                .conversationId(event.getConversationId())
+                .senderId(senderId.toString())
+                .isTyping(event.isTyping())
+                .build();
+
+        rabbitMQProducer.sendTyping(verified, recipient.getId());
     }
 
     /**
-     * Lấy Conversation theo ID — dùng bởi ChatController sau khi persistMessage.
+     * Đánh dấu tất cả tin nhắn trong conversation là đã đọc.
      */
-    @Transactional(readOnly = true)
-    public Conversation getConversation(UUID conversationId) {
-        return conversationRepository.findById(conversationId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Conversation không tồn tại: " + conversationId));
+    @Transactional
+    public void markAsRead(UUID conversationId, UUID userId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại"));
+
+        messageRepository.markAllMessagesAsRead(conversationId, userId);
+
+        TaiKhoan otherUser = conversation.getUser1().getId().equals(userId)
+                ? conversation.getUser2()
+                : conversation.getUser1();
+
+        MessageReadEventDTO readEvent = MessageReadEventDTO.builder()
+                .conversationId(conversationId.toString())
+                .messageId("")
+                .readerId(userId.toString())
+                .readAt(LocalDateTime.now())
+                .build();
+
+        rabbitMQProducer.sendMessageRead(readEvent, otherUser.getId());
     }
 
-    // ── Mapping helper ──────────────────────────────────────────────────────
+    /**
+     * Lấy danh sách cuộc trò chuyện của người dùng kèm thông tin đối phương và số tin chưa đọc.
+     */
+    @Transactional(readOnly = true)
+    public List<ConversationResponseDTO> getConversations(UUID userId) {
+        List<Conversation> list = conversationRepository.findAllByUserId(userId);
+        return list.stream().map(c -> {
+            TaiKhoan other = c.getUser1().getId().equals(userId) ? c.getUser2() : c.getUser1();
+            long unread = messageRepository.countUnreadMessages(c.getId(), userId);
+            var lastMsg = messageRepository.findFirstByConversationIdOrderBySentAtDesc(c.getId());
 
-    private MessageResponseDTO toDTO(Message message) {
-        LocalDateTime sentAt = LocalDateTime.ofInstant(
-                message.getSentAt(), ZoneOffset.UTC);
+            return ConversationResponseDTO.builder()
+                    .conversationId(c.getId().toString())
+                    .otherUserId(other.getId().toString())
+                    .otherUserName(other.getUserName())
+                    .otherTenTaiKhoan(other.getTenTaiKhoan())
+                    .lastMessageContent(lastMsg.map(Message::getContent).orElse(null))
+                    .lastMessageAt(c.getLastMessageAt())
+                    .unreadCount(unread)
+                    .createdAt(c.getCreatedAt())
+                    .build();
+        }).toList();
+    }
+
+    /**
+     * Lấy lịch sử tin nhắn của một cuộc trò chuyện.
+     */
+    @Transactional(readOnly = true)
+    public List<MessageResponseDTO> getMessages(UUID conversationId, UUID userId, int page, int size) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại"));
+
+        boolean isMember = conversation.getUser1().getId().equals(userId)
+                || conversation.getUser2().getId().equals(userId);
+        if (!isMember) {
+            throw new IllegalArgumentException("Bạn không có quyền xem cuộc trò chuyện này");
+        }
+
+        var pageRequest = PageRequest.of(page, size);
+        return messageRepository.findByConversationIdOrderBySentAtDesc(conversationId, pageRequest)
+                .map(this::toMessageDTO)
+                .getContent();
+    }
+
+    /**
+     * Khởi tạo hoặc lấy lại cuộc trò chuyện hiện có với partner.
+     */
+    @Transactional
+    public ConversationResponseDTO createOrGetConversation(UUID userId, UUID partnerId) {
+        if (userId.equals(partnerId)) {
+            throw new IllegalArgumentException("Không thể tạo cuộc trò chuyện với chính mình");
+        }
+
+        TaiKhoan user = taiKhoanRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User không tồn tại"));
+        TaiKhoan partner = taiKhoanRepository.findById(partnerId)
+                .orElseThrow(() -> new IllegalArgumentException("Partner không tồn tại"));
+
+        Conversation conversation = conversationRepository.findBetweenUsers(userId, partnerId)
+                .orElseGet(() -> conversationRepository.save(new Conversation(user, partner)));
+
+        long unread = messageRepository.countUnreadMessages(conversation.getId(), userId);
+        var lastMsg = messageRepository.findFirstByConversationIdOrderBySentAtDesc(conversation.getId());
+
+        return ConversationResponseDTO.builder()
+                .conversationId(conversation.getId().toString())
+                .otherUserId(partner.getId().toString())
+                .otherUserName(partner.getUserName())
+                .otherTenTaiKhoan(partner.getTenTaiKhoan())
+                .lastMessageContent(lastMsg.map(Message::getContent).orElse(null))
+                .lastMessageAt(conversation.getLastMessageAt())
+                .unreadCount(unread)
+                .createdAt(conversation.getCreatedAt())
+                .build();
+    }
+
+    private MessageResponseDTO toMessageDTO(Message message) {
+        Instant sentInstant = message.getSentAt() != null ? message.getSentAt() : Instant.now();
+        LocalDateTime sentAt = LocalDateTime.ofInstant(sentInstant, ZoneOffset.UTC);
         return MessageResponseDTO.builder()
                 .messageId(message.getId().toString())
                 .conversationId(message.getConversation().getId().toString())

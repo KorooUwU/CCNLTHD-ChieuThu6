@@ -46,9 +46,8 @@ public class SecurityConfig {
                         }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(register, login).permitAll()
-                        // WebSocket HTTP handshake: xác thực thực sự diễn ra tại STOMP CONNECT
-                        // thông qua StompAuthChannelInterceptor, không phải tại HTTP level
-                        .requestMatchers("/ws/**").permitAll()
+                        // SSE endpoint: cho phép kết nối HTTP GET ban đầu (xác thực qua Bearer hoặc ?token= query param)
+                        .requestMatchers("/api/notifications/stream", "/api/sse/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors

@@ -1,0 +1,13 @@
+# Secrets and environments
+.env
+*.env.local
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Build and dependencies
+**/target/
+**/build/
+*.log
