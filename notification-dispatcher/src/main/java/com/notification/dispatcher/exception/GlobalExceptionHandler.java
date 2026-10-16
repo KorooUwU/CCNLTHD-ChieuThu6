@@ -77,4 +77,26 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(status).body(new ErrorResponseDTO(
                 code, message, details, LocalDateTime.now(ZoneOffset.UTC)));
     }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Object> handleUserNotFound(UserNotFoundException exception) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                "USER_NOT_FOUND",
+                "Không tìm thấy người dùng",
+                null
+        );
+    }
+
+    @ExceptionHandler(ConversationNotFoundException.class)
+    public ResponseEntity<Object> handleConversationNotFound(
+            ConversationNotFoundException exception) {
+
+        return error(
+                HttpStatus.NOT_FOUND,
+                "CONVERSATION_NOT_FOUND",
+                "Không tìm thấy cuộc hội thoại",
+                null
+        );
+    }
 }
