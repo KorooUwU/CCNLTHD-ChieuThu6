@@ -18,4 +18,7 @@ public interface TaiKhoanRepository extends JpaRepository<TaiKhoan, UUID> {
     boolean existsByEmail(String email);
 
     boolean existsByUserName(String userName);
+
+    org.springframework.data.domain.Page<TaiKhoan> findByUserNameContainingIgnoreCaseOrTenTaiKhoanContainingIgnoreCase(
+            String userName, String tenTaiKhoan, org.springframework.data.domain.Pageable pageable);
 }

@@ -33,6 +33,53 @@ class SecurityConfigTest {
     @MockitoBean
     private AuthService service;
 
+    @MockitoBean
+    private com.notification.dispatcher.service.UserService userService;
+
+    @Test
+    void profileAndSearchRequireAuthentication() throws Exception {
+        mvc.perform(patch("/api/users/me").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"tenTaiKhoan\":\"New name\"}")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/users/search").param("keyword", "user")).andExpect(status().isUnauthorized());
+        mvc.perform(patch("/api/users/me").header("Authorization", "Bearer broken")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"tenTaiKhoan\":\"A\"}"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    void updateUsesTokenIdentityAndOnlyDisplayName() throws Exception {
+        var id = java.util.UUID.randomUUID();
+        when(userService.updateProfile(eq(id), any())).thenReturn(new UserResponseDTO(
+                id.toString(), "New name", "a@example.com", "user_a", Instant.now()));
+        mvc.perform(patch("/api/users/me").param("userId", java.util.UUID.randomUUID().toString())
+                .header("Authorization", "Bearer " + tokens.issue(id).accessToken())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"tenTaiKhoan\":\"New name\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.passwordHash").doesNotExist());
+        verify(userService).updateProfile(eq(id), argThat(r -> r.tenTaiKhoan().equals("New name")));
+    }
+
+    @Test
+    void blankProfileIsRejected() throws Exception {
+        mvc.perform(patch("/api/users/me").header("Authorization", "Bearer " + tokens.issue(java.util.UUID.randomUUID()).accessToken())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"tenTaiKhoan\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    void searchReturnsOnlyPublicFields() throws Exception {
+        var summary = new com.notification.dispatcher.DTO.UserSummaryDTO("id", "Name", "user");
+        when(userService.search("user", 0, 20)).thenReturn(new com.notification.dispatcher.DTO.UserSearchResponseDTO(
+                java.util.List.of(summary), 0, 20, 1, 1));
+        mvc.perform(get("/api/users/search").param("keyword", "user")
+                .header("Authorization", "Bearer " + tokens.issue(java.util.UUID.randomUUID()).accessToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].userName").value("user"))
+                .andExpect(jsonPath("$.content[0].email").doesNotExist())
+                .andExpect(jsonPath("$.content[0].passwordHash").doesNotExist());
+    }
+
     @Test
     void registrationWorksWithoutAuthenticationOrCsrf() throws Exception {
         when(service.register(any())).thenReturn(new UserResponseDTO(
