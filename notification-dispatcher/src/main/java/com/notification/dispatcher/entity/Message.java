@@ -33,8 +33,14 @@ public class Message {
     @JoinColumn(name = "sender_id", nullable = false)
     private TaiKhoan sender;
 
-    @Column(name = "content", nullable = false, columnDefinition = "text")
+    @Column(name = "content", columnDefinition = "text")
     private String content;
+
+    @Column(name = "image_url", columnDefinition = "text")
+    private String imageUrl;
+
+    @Column(name = "attachment_public_id", length = 255)
+    private String attachmentPublicId;
 
     @Builder.Default
     @Column(name = "type", nullable = false, length = 20)
@@ -49,14 +55,20 @@ public class Message {
     private Instant sentAt;
 
     public Message(Conversation conversation, TaiKhoan sender, String content) {
-        this(conversation, sender, content, "TEXT");
+        this(conversation, sender, content, "TEXT", null, null);
     }
 
     public Message(Conversation conversation, TaiKhoan sender, String content, String type) {
+        this(conversation, sender, content, type, null, null);
+    }
+
+    public Message(Conversation conversation, TaiKhoan sender, String content, String type, String imageUrl, String attachmentPublicId) {
         this.conversation = conversation;
         this.sender = sender;
         this.content = content;
-        this.type = type != null ? type : "TEXT";
+        this.type = type != null ? type : (imageUrl != null ? "IMAGE" : "TEXT");
+        this.imageUrl = imageUrl;
+        this.attachmentPublicId = attachmentPublicId;
         this.read = false;
     }
 }

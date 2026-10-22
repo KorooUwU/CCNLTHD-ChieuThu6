@@ -176,6 +176,15 @@ public class ConversationService {
                 conversation.getId(),
                 currentUserId);
 
+        String lastMessageContent = null;
+        if (lastMessage != null) {
+            if (lastMessage.getContent() != null && !lastMessage.getContent().isBlank()) {
+                lastMessageContent = lastMessage.getContent();
+            } else if (lastMessage.getImageUrl() != null && !lastMessage.getImageUrl().isBlank()) {
+                lastMessageContent = "[Hình ảnh]";
+            }
+        }
+
         return ConversationSummaryDTO.builder()
                 .conversationId(conversation.getId().toString())
                 .conversationType(conversation.getType().name())
@@ -183,7 +192,7 @@ public class ConversationService {
                 .partnerName(group ? conversation.getGroupName() : partner.getTenTaiKhoan())
                 .partnerAvatarUrl(null)
                 .memberCount(group ? conversation.getMembers().size() : 2)
-                .lastMessageContent(lastMessage == null ? null : lastMessage.getContent())
+                .lastMessageContent(lastMessageContent)
                 .lastMessageAt(lastMessage == null || lastMessage.getSentAt() == null
                         ? null
                         : lastMessage.getSentAt().atZone(ZoneOffset.UTC).toLocalDateTime())
