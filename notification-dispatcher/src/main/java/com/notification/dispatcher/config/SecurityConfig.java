@@ -48,6 +48,7 @@ public class SecurityConfig {
                         .requestMatchers(register, login).permitAll()
                         // SSE endpoint: cho phép kết nối HTTP GET ban đầu (xác thực qua Bearer hoặc ?token= query param)
                         .requestMatchers("/api/notifications/stream", "/api/sse/**").permitAll()
+                        .requestMatchers("/api/presence/**").authenticated()
                         .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors

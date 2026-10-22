@@ -1,7 +1,9 @@
 package com.notification.dispatcher.sse;
 
+import com.notification.dispatcher.presence.PresenceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -42,6 +44,16 @@ public class SseService {
     /** Map lưu userId -> danh sách các SSE emitter đang mở */
     private final ConcurrentHashMap<UUID, CopyOnWriteArrayList<SseEmitter>> userEmitters = new ConcurrentHashMap<>();
 
+    /** PresenceService để cập nhật trạng thái Online/Offline khi kết nối SSE thay đổi */
+    private final PresenceService presenceService;
+
+    /**
+     * @param presenceService @Lazy để tránh circular dependency (PresenceService → RabbitMQProducer → RabbitTemplate)
+     */
+    public SseService(@Lazy PresenceService presenceService) {
+        this.presenceService = presenceService;
+    }
+
     /**
      * Tạo và đăng ký một SSE Emitter mới cho người dùng.
      *
@@ -51,6 +63,7 @@ public class SseService {
     public SseEmitter subscribe(UUID userId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
 
+        boolean wasOffline = !isUserOnline(userId);
         userEmitters.computeIfAbsent(userId, k -> new CopyOnWriteArrayList<>()).add(emitter);
 
         Runnable cleanup = () -> removeEmitter(userId, emitter);
@@ -71,6 +84,12 @@ public class SseService {
         } catch (IOException e) {
             log.warn("Lỗi gửi event CONNECTED tới userId={}: {}", userId, e.getMessage());
             cleanup.run();
+            return emitter;
+        }
+
+        // Đánh dấu ONLINE sau khi emitter đã ổn định (chỉ broadcast lần đầu kết nối)
+        if (wasOffline) {
+            presenceService.markOnline(userId);
         }
 
         return emitter;
@@ -160,7 +179,8 @@ public class SseService {
             emitters.remove(emitter);
             if (emitters.isEmpty()) {
                 userEmitters.remove(userId);
-                log.info("Tất cả kết nối SSE của userId={} đã đóng", userId);
+                log.info("Tất cả kết nối SSE của userId={} đã đóng → đánh dấu OFFLINE", userId);
+                presenceService.markOffline(userId);
             }
         }
     }
