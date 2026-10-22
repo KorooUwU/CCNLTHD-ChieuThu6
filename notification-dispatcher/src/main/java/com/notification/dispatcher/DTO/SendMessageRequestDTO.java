@@ -16,7 +16,6 @@ public class SendMessageRequestDTO {
     @NotBlank(message = "Conversation ID không được để trống")
     private String conversationId;
 
-    @NotBlank(message = "Nội dung tin nhắn không được để trống")
     private String messageContent;
 
     private String receiverId;
@@ -24,4 +23,7 @@ public class SendMessageRequestDTO {
     // Loại tin nhắn (TEXT, IMAGE, FILE...) mặc định là TEXT nếu null
     private String type;
 
+    private String imageUrl;
+
+    private String attachmentPublicId;
 }

@@ -18,6 +18,8 @@ public class MessageResponseDTO {
     private String senderName;
     private String messageContent;
     private String type;
+    private String imageUrl;
+    private String attachmentPublicId;
     private LocalDateTime sendAt;
     private boolean isRead;
 
