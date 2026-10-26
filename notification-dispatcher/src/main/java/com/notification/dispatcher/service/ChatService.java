@@ -114,6 +114,18 @@ public class ChatService {
         rabbitMQProducer.sendChatMessage(recipient.getId(), messageResponse, senderId, conversation.getId());
         rabbitMQProducer.sendNotification(recipient.getId(), notificationResponse, senderId);
 
+        // 6. Push CONVERSATION_UPDATED cho người nhận (đang ở màn hình ngoài / inbox)
+        //    → cập nhật preview tin nhắn cuối + tăng unread badge
+        ConversationUpdatedEventDTO updatedForRecipient = buildConversationUpdated(
+                conversation, recipient.getId(), "NEW_MESSAGE");
+        rabbitMQProducer.sendConversationUpdated(recipient.getId(), updatedForRecipient);
+
+        // 7. Push CONVERSATION_UPDATED cho người gửi (đồng bộ đa tab / đa thiết bị)
+        //    → cập nhật preview trong inbox của chính họ (unread = 0 vì họ là sender)
+        ConversationUpdatedEventDTO updatedForSender = buildConversationUpdated(
+                conversation, senderId, "NEW_MESSAGE");
+        rabbitMQProducer.sendConversationUpdated(senderId, updatedForSender);
+
         return messageResponse;
     }
 
@@ -161,6 +173,17 @@ public class ChatService {
                 .build();
 
         rabbitMQProducer.sendMessageRead(readEvent, otherUser.getId());
+
+        // Sau khi đánh dấu đọc: push CONVERSATION_UPDATED cho chính người đọc
+        // → unread count về 0 để cập nhật badge ngay lập tức
+        ConversationUpdatedEventDTO updatedForReader = buildConversationUpdated(
+                conversation, userId, "MESSAGES_READ");
+        rabbitMQProducer.sendConversationUpdated(userId, updatedForReader);
+
+        // Push cho người kia để họ biết tin nhắn của mình đã được đọc (cập nhật inbox preview)
+        ConversationUpdatedEventDTO updatedForOther = buildConversationUpdated(
+                conversation, otherUser.getId(), "MESSAGES_READ");
+        rabbitMQProducer.sendConversationUpdated(otherUser.getId(), updatedForOther);
     }
 
     /**
@@ -236,6 +259,34 @@ public class ChatService {
                 .lastMessageAt(conversation.getLastMessageAt())
                 .unreadCount(unread)
                 .createdAt(conversation.getCreatedAt())
+                .build();
+    }
+
+    /**
+     * Tạo ConversationUpdatedEventDTO từ conversation, nhìn từ góc nhìn của userId.
+     *
+     * @param conversation  cuộc trò chuyện
+     * @param userId        userId của người nhận event (để tính unreadCount từ góc nhìn họ)
+     * @param reason        "NEW_MESSAGE" hoặc "MESSAGES_READ"
+     * @return DTO sẵn sàng publish
+     */
+    private ConversationUpdatedEventDTO buildConversationUpdated(
+            Conversation conversation, UUID userId, String reason) {
+        TaiKhoan other = conversation.getUser1().getId().equals(userId)
+                ? conversation.getUser2()
+                : conversation.getUser1();
+        long unread = messageRepository.countUnreadMessages(conversation.getId(), userId);
+        return ConversationUpdatedEventDTO.builder()
+                .conversationId(conversation.getId().toString())
+                .otherUserId(other.getId().toString())
+                .otherUserName(other.getUserName())
+                .otherTenTaiKhoan(other.getTenTaiKhoan())
+                .lastMessageContent(messageRepository
+                        .findFirstByConversationIdOrderBySentAtDesc(conversation.getId())
+                        .map(Message::getContent).orElse(null))
+                .lastMessageAt(conversation.getLastMessageAt())
+                .unreadCount(unread)
+                .reason(reason)
                 .build();
     }
 

@@ -112,6 +112,26 @@ public class RabbitMQProducer {
         publish(routingKey, event);
     }
 
+    /**
+     * Publish sự kiện cập nhật danh sách chat (inbox) vào RabbitMQ.
+     * Được gửi đến cả 2 phía (sender và recipient) để đồng bộ inbox realtime.
+     *
+     * @param recipientId  UUID người nhận event này
+     * @param conversation thông tin cuộc trò chuyện đã cập nhật
+     */
+    public void sendConversationUpdated(UUID recipientId, ConversationUpdatedEventDTO conversation) {
+        EventPayloadDTO<ConversationUpdatedEventDTO> event = EventPayloadDTO.<ConversationUpdatedEventDTO>builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType("CONVERSATION_UPDATED")
+                .recipientId(recipientId.toString())
+                .timestamp(LocalDateTime.now())
+                .data(conversation)
+                .build();
+
+        String routingKey = "notification.conversation." + recipientId;
+        publish(routingKey, event);
+    }
+
     private void publish(String routingKey, EventPayloadDTO<?> event) {
         log.debug("Publishing to RabbitMQ [{}]: eventType={}, recipientId={}",
                 routingKey, event.getEventType(), event.getRecipientId());
