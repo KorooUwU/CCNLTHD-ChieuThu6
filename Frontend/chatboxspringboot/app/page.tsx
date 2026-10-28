@@ -87,9 +87,7 @@ export default function MessengerPage() {
       }));
 
       setConversations(mapped);
-      if (mapped.length > 0 && !selectedId) {
-        setSelectedId(mapped[0].id);
-      }
+      // Không tự động chọn hội thoại đầu tiên để hiển thị trạng thái "Chưa chọn đoạn chat nào" giống Messenger
     } catch (err) {
       console.warn("Lỗi tải hội thoại:", err);
     } finally {
