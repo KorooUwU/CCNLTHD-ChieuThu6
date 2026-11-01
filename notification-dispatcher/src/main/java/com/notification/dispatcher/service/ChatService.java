@@ -272,15 +272,19 @@ public class ChatService {
      */
     private ConversationUpdatedEventDTO buildConversationUpdated(
             Conversation conversation, UUID userId, String reason) {
-        TaiKhoan other = conversation.getUser1().getId().equals(userId)
-                ? conversation.getUser2()
-                : conversation.getUser1();
+        boolean isGroup = conversation.getType() == com.notification.dispatcher.entity.ConversationType.GROUP;
+        TaiKhoan other = null;
+        if (!isGroup && conversation.getUser1() != null) {
+            other = conversation.getUser1().getId().equals(userId)
+                    ? conversation.getUser2()
+                    : conversation.getUser1();
+        }
         long unread = messageRepository.countUnreadMessages(conversation.getId(), userId);
         return ConversationUpdatedEventDTO.builder()
                 .conversationId(conversation.getId().toString())
-                .otherUserId(other.getId().toString())
-                .otherUserName(other.getUserName())
-                .otherTenTaiKhoan(other.getTenTaiKhoan())
+                .otherUserId(other != null ? other.getId().toString() : null)
+                .otherUserName(other != null ? other.getUserName() : conversation.getGroupName())
+                .otherTenTaiKhoan(other != null ? other.getTenTaiKhoan() : conversation.getGroupName())
                 .lastMessageContent(messageRepository
                         .findFirstByConversationIdOrderBySentAtDesc(conversation.getId())
                         .map(Message::getContent).orElse(null))

@@ -63,4 +63,16 @@ public class NotificationController {
         UUID userId = UUID.fromString(jwt.getSubject());
         notificationService.markAsRead(UUID.fromString(request.getNotificationId()), userId);
     }
+
+    /**
+     * Đánh dấu tất cả thông báo từ một người gửi là đã đọc.
+     */
+    @PostMapping("/read-by-sender/{senderId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void markReadBySender(
+            @PathVariable UUID senderId,
+            @AuthenticationPrincipal Jwt jwt) {
+        UUID userId = UUID.fromString(jwt.getSubject());
+        notificationService.markReadBySender(userId, senderId);
+    }
 }

@@ -18,9 +18,12 @@ public class RabbitMQProducer {
     private static final Logger log = LoggerFactory.getLogger(RabbitMQProducer.class);
 
     private final RabbitTemplate rabbitTemplate;
+    private final com.notification.dispatcher.sse.SseService sseService;
 
-    public RabbitMQProducer(RabbitTemplate rabbitTemplate) {
+    public RabbitMQProducer(RabbitTemplate rabbitTemplate,
+                            @org.springframework.context.annotation.Lazy com.notification.dispatcher.sse.SseService sseService) {
         this.rabbitTemplate = rabbitTemplate;
+        this.sseService = sseService;
     }
 
     /**
@@ -135,6 +138,32 @@ public class RabbitMQProducer {
     private void publish(String routingKey, EventPayloadDTO<?> event) {
         log.debug("Publishing to RabbitMQ [{}]: eventType={}, recipientId={}",
                 routingKey, event.getEventType(), event.getRecipientId());
-        rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, routingKey, event);
+        boolean rabbitSent = false;
+        try {
+            rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, routingKey, event);
+            rabbitSent = true;
+        } catch (Exception e) {
+            log.debug("RabbitMQ chưa sẵn sàng, điều hướng sự kiện trực tiếp qua SSE: {}", e.getMessage());
+        }
+
+        // Fallback: nếu RabbitMQ broker không chạy, đẩy trực tiếp tới các kết nối SSE đang mở
+        if (!rabbitSent && sseService != null) {
+            if (event.getRecipientId() != null) {
+                try {
+                    UUID recipientUuid = UUID.fromString(event.getRecipientId());
+                    sseService.sendToUser(recipientUuid, event.getEventType(), event.getData());
+                } catch (IllegalArgumentException ignored) {}
+            } else {
+                sseService.broadcast(event.getEventType(), event.getData());
+            }
+
+            // Với tin nhắn mới, đồng bộ cả cho người gửi (đa tab / thiết bị)
+            if ("NEW_MESSAGE".equals(event.getEventType()) && event.getSenderId() != null) {
+                try {
+                    UUID senderUuid = UUID.fromString(event.getSenderId());
+                    sseService.sendToUser(senderUuid, "MESSAGE_SENT", event.getData());
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
     }
 }
