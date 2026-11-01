@@ -141,7 +141,7 @@ public class ConversationService {
 
     private void requireMember(Conversation conversation, UUID userId) {
         if (conversation.getMembers().stream().noneMatch(member -> member.getId().equals(userId))) {
-            throw new IllegalArgumentException("Người dùng không phải thành viên nhóm");
+            throw new com.notification.dispatcher.exception.ConversationAccessDeniedException();
         }
     }
 

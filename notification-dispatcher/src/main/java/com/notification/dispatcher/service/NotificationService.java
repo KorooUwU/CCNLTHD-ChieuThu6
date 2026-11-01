@@ -86,33 +86,13 @@ public class NotificationService {
         String convId = null;
         String content = null;
 
-        if (notification.getTriggeredBy() != null && notification.getRecipient() != null) {
-            if ("GROUP_MESSAGE".equalsIgnoreCase(notification.getType())) {
-                List<Conversation> convs = conversationRepository.findAllByUserId(notification.getRecipient().getId());
-                for (Conversation c : convs) {
-                    if (c.getType() == ConversationType.GROUP &&
-                            conversationRepository.isMember(c.getId(), notification.getTriggeredBy().getId())) {
-                        convId = c.getId().toString();
-                        var lastMsg = messageRepository.findFirstByConversationIdOrderBySentAtDesc(c.getId());
-                        if (lastMsg.isPresent() && lastMsg.get().getContent() != null) {
-                            content = lastMsg.get().getContent();
-                        }
-                        break;
-                    }
-                }
-            } else {
-                Optional<Conversation> convOpt = conversationRepository.findBetweenUsers(
-                        notification.getRecipient().getId(),
-                        notification.getTriggeredBy().getId()
-                );
-                if (convOpt.isPresent()) {
-                    convId = convOpt.get().getId().toString();
-                    var lastMsg = messageRepository.findFirstByConversationIdOrderBySentAtDesc(convOpt.get().getId());
-                    if (lastMsg.isPresent() && lastMsg.get().getContent() != null) {
-                        content = lastMsg.get().getContent();
-                    }
-                }
-            }
+        // A legacy notification has no reliable message reference; do not guess
+        // its content from a newer message or another group with the same users.
+        if (notification.getMessage() != null) {
+            var message = notification.getMessage();
+            convId = message.getConversation().getId().toString();
+            content = message.getContent() != null ? message.getContent()
+                    : (message.getImageUrl() != null ? "[Hình ảnh]" : null);
         }
 
         return NotificationResponseDTO.builder()

@@ -35,6 +35,12 @@ class MessageServiceTest {
         conversationRepository = mock(ConversationRepository.class);
         taiKhoanRepository = mock(TaiKhoanRepository.class);
         notificationRepository = mock(com.notification.dispatcher.repository.NotificationRepository.class);
+        when(notificationRepository.save(any(com.notification.dispatcher.entity.Notification.class)))
+                .thenAnswer(invocation -> {
+                    var notification = (com.notification.dispatcher.entity.Notification) invocation.getArgument(0);
+                    notification.setId(UUID.randomUUID());
+                    return notification;
+                });
         rabbitMQProducer = mock(com.notification.dispatcher.rabbitmq.RabbitMQProducer.class);
         service = new MessageService(messageRepository, conversationRepository, taiKhoanRepository, notificationRepository, rabbitMQProducer);
     }

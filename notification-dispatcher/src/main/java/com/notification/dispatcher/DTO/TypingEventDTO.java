@@ -19,6 +19,8 @@ public class TypingEventDTO {
     @NotBlank(message = "Sender ID không được để trống")
     private String senderId;
 
+    @com.fasterxml.jackson.annotation.JsonProperty("isTyping")
+    @com.fasterxml.jackson.annotation.JsonAlias("typing")
     private boolean isTyping;
 
 }

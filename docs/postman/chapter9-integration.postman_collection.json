@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Chat System ? Chapter 9 Integration Tests",
-    "description": "Run folders in order against a dev database. C tests access to A-B. Group and Cloudinary are opt-in. Unauthorized access expects 403; current backend may return 400, which is an intentional failing contract check.",
+    "description": "Run folders in order against a dev database. C tests access to A-B. Group and Cloudinary are opt-in. Unauthorized access expects 403; current backend may return 400, which is an intentional failing contract check. Extended: groups use D as outsider. RabbitMQ required for /api/chat/send. SSE streams are manual, skip in Runner; HTTP success is not evidence of received events.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,7 +11,7 @@
     },
     {
       "key": "runGroups",
-      "value": "false"
+      "value": "true"
     },
     {
       "key": "runCloudinary",
@@ -20,11 +20,15 @@
     {
       "key": "imagePath",
       "value": ""
+    },
+    {
+      "key": "manualSse",
+      "value": "false"
     }
   ],
   "item": [
     {
-      "name": "01 ? Authentication",
+      "name": "01 - Authentication",
       "item": [
         {
           "name": "Register User A",
@@ -54,7 +58,7 @@
                   "const s=Date.now()+\"_\"+Math.floor(Math.random()*100000);",
                   "pm.collectionVariables.set(\"runId\",s);",
                   "pm.collectionVariables.set(\"password\",\"Test_\"+s+\"!\");",
-                  "[\"idA\",\"idB\",\"idC\",\"tokenA\",\"tokenB\",\"tokenC\",\"conversationId\",\"messageId\",\"imageUrl\",\"imagePublicId\",\"imageMessageId\"].forEach(k=>pm.collectionVariables.unset(k));"
+                  "const keys = [\"idA\", \"idB\", \"idC\", \"idD\", \"tokenA\", \"tokenB\", \"tokenC\", \"tokenD\", \"conversationId\", \"messageId\", \"groupConversationId\", \"groupMessageId\", \"notificationId\", \"realtimeMessageId\", \"imageUrl\", \"imagePublicId\", \"imageMessageId\", \"unreadBeforeB\", \"notificationIdsThisRun\"]; keys.forEach(key => pm.collectionVariables.unset(key));"
                 ]
               }
             },
@@ -266,11 +270,95 @@
               }
             }
           ]
+        },
+        {
+          "name": "Register User D",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/register",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tenTaiKhoan\": \"User D\", \"userName\": \"ch9_D_{{runId}}\", \"email\": \"D_{{runId}}@example.test\", \"password\": \"{{password}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"idD\",pm.response.json().id);",
+                  "pm.test(\"No password hash\",()=>pm.expect(pm.response.json()).not.to.have.property(\"passwordHash\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login User D",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"userName\": \"ch9_D_{{runId}}\", \"password\": \"{{password}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"tokenD\",pm.response.json().accessToken);",
+                  "pm.test(\"Bearer token\",()=>{pm.expect(pm.response.json().tokenType).to.eql(\"Bearer\");pm.expect(pm.response.json().accessToken).to.be.a(\"string\").and.not.empty;});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "02 ? User Management",
+      "name": "02 - User Management",
       "item": [
         {
           "name": "Get My Profile",
@@ -415,7 +503,7 @@
                 "exec": [
                   "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
                   "const b=pm.response.json();",
-                  "pm.test(\"Pagination\",()=>{pm.expect(b.totalElements).to.eql(3);pm.expect(b.content.length).to.eql(2);});",
+                  "pm.test(\"Pagination\",()=>{pm.expect(b.totalElements).to.eql(pm.variables.get(\"runGroups\")===\"true\"?4:3);pm.expect(b.content.length).to.eql(2);});",
                   "pm.test(\"Public fields only\",()=>b.content.forEach(u=>pm.expect(Object.keys(u).sort()).to.eql([\"id\",\"tenTaiKhoan\",\"userName\"].sort())));"
                 ]
               }
@@ -447,7 +535,7 @@
       ]
     },
     {
-      "name": "03 ? Conversations",
+      "name": "03 - Conversations & Group Chat",
       "item": [
         {
           "name": "Create Direct Conversation",
@@ -578,9 +666,13 @@
           ]
         },
         {
-          "name": "Create Group Conversation",
+          "name": "Create Group A B C",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/conversations/groups",
+            "auth": {
+              "type": "noauth"
+            },
             "header": [
               {
                 "key": "Authorization",
@@ -591,13 +683,9 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/conversations/groups",
-            "auth": {
-              "type": "noauth"
-            },
             "body": {
               "mode": "raw",
-              "raw": "{\"groupName\": \"Chapter9 {{runId}}\", \"memberIds\": [\"{{idB}}\"]}"
+              "raw": "{\"groupName\": \"Chapter9 {{runId}}\", \"memberIds\": [\"{{idB}}\", \"{{idC}}\"]}"
             }
           },
           "event": [
@@ -606,7 +694,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.variables.get(\"runGroups\") !== \"true\") pm.execution.skipRequest();"
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
                 ]
               }
             },
@@ -615,7 +703,509 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));"
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));",
+                  "const b=pm.response.json();pm.collectionVariables.set(\"groupConversationId\",b.conversationId);",
+                  "pm.test(\"Exactly A B C\",()=>pm.expect(b.members.map(m=>m.id).sort()).to.eql([\"idA\",\"idB\",\"idC\"].map(k=>pm.collectionVariables.get(k)).sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Group visible to A",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/get",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Group listed\",()=>pm.expect(pm.response.json().some(v=>v.conversationId===pm.collectionVariables.get(\"groupConversationId\"))).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Group visible to B",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/get",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Group listed\",()=>pm.expect(pm.response.json().some(v=>v.conversationId===pm.collectionVariables.get(\"groupConversationId\"))).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Group visible to C",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/get",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenC}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Group listed\",()=>pm.expect(pm.response.json().some(v=>v.conversationId===pm.collectionVariables.get(\"groupConversationId\"))).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A sends group message",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{groupConversationId}}\", \"messageContent\": \"Group {{runId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"groupMessageId\",pm.response.json().messageId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B reads group",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Group message found\",()=>pm.expect(pm.response.json().some(m=>m.messageId===pm.collectionVariables.get(\"groupMessageId\"))).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C reads group",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenC}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Group message found\",()=>pm.expect(pm.response.json().some(m=>m.messageId===pm.collectionVariables.get(\"groupMessageId\"))).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Outsider D cannot read group",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenD}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\",()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Outsider D cannot send group",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenD}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{groupConversationId}}\", \"messageContent\": \"Forbidden group message\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\",()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Unauthorized Group Message Not Saved",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Unauthorized group message not saved\",()=>{const messages=pm.response.json();pm.expect(messages.some(m=>m.senderId===pm.collectionVariables.get(\"idD\") && m.messageContent===\"Forbidden group message\")).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add member D",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/members",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"userId\": \"{{idD}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"D added\",()=>pm.expect(pm.response.json().members.some(m=>m.id===pm.collectionVariables.get(\"idD\"))).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D can read after joining",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenD}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove member D",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/members/{{idD}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\",()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "D denied after removal",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/conversations/{{groupConversationId}}/messages",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenD}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"runGroups\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\",()=>pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -624,7 +1214,7 @@
       ]
     },
     {
-      "name": "04 ? Messages",
+      "name": "04 - Messages",
       "item": [
         {
           "name": "Send Text Message",
@@ -756,7 +1346,7 @@
       ]
     },
     {
-      "name": "05 ? Cloudinary",
+      "name": "05 - Cloudinary",
       "item": [
         {
           "name": "Upload Image",
@@ -894,7 +1484,7 @@
       ]
     },
     {
-      "name": "06 ? Negative & Security Tests",
+      "name": "06 - Negative & Security Tests",
       "item": [
         {
           "name": "Register Duplicate Email",
@@ -1043,6 +1633,719 @@
                 "exec": [
                   "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
                   "pm.test(\"No message from C\",()=>pm.expect(pm.response.json().some(m=>m.senderId===pm.collectionVariables.get(\"idC\"))).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 - Notifications",
+      "item": [
+        {
+          "name": "GET unread baseline B",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications/unread-count",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Valid baseline\",()=>pm.expect(pm.response.json().unreadCount).to.be.a(\"number\"));",
+                  "pm.collectionVariables.set(\"unreadBeforeB\",pm.response.json().unreadCount);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seed notification 1",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/chat/send",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{conversationId}}\", \"messageContent\": \"Notification 1 {{runId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seed notification 2",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/chat/send",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{conversationId}}\", \"messageContent\": \"Notification 2 {{runId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seed notification 3",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/chat/send",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{conversationId}}\", \"messageContent\": \"Notification 3 {{runId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET notifications B",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "const b=pm.response.json();const matches=b.filter(n=>n.senderId===pm.collectionVariables.get(\"idA\") && /^Notification [123] /.test(n.messageContent||\"\") && (n.messageContent||\"\").endsWith(pm.collectionVariables.get(\"runId\")));",
+                  "pm.test(\"Three notifications from this run\",()=>pm.expect(matches.length).to.eql(3));",
+                  "pm.collectionVariables.set(\"notificationIdsThisRun\",JSON.stringify(matches.map(n=>n.notificationId)));if(matches.length)pm.collectionVariables.set(\"notificationId\",matches[0].notificationId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET unread count B",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications/unread-count",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Unread increased by exactly 3\",()=>{const before=Number(pm.collectionVariables.get(\"unreadBeforeB\"));pm.expect(Number.isFinite(before)).to.eql(true);pm.expect(pm.response.json().unreadCount-before).to.eql(3);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST read one B",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/notifications/read",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"notificationId\": \"{{notificationId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\",()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify one read",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Notification read\",()=>{const n=pm.response.json().find(n=>n.notificationId===pm.collectionVariables.get(\"notificationId\"));pm.expect(n).to.exist;pm.expect(n.isRead ?? n.read).to.eql(true);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST read by sender B",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/notifications/read-by-sender/{{idA}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\",()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify unread zero after sender",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications/unread-count",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Unread zero\",()=>pm.expect(pm.response.json().unreadCount).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seed before read all",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/chat/send",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{conversationId}}\", \"messageContent\": \"Read all {{runId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST read all B",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/notifications/read-all",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\",()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify read all",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications/unread-count",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Unread zero\",()=>pm.expect(pm.response.json().unreadCount).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 - Presence",
+      "item": [
+        {
+          "name": "GET presence me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/presence/me",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Own identity\",()=>pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get(\"idA\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET presence B",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/presence/{{idB}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"B identity\",()=>pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get(\"idB\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST presence batch",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/presence/batch",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\"{{idA}}\", \"{{idB}}\"]"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Both identities\",()=>{const b=pm.response.json();[\"idA\",\"idB\"].forEach(k=>pm.expect(b[pm.collectionVariables.get(k)].userId).to.eql(pm.collectionVariables.get(k)));});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET online",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/presence/online",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+                  "pm.test(\"Online list\",()=>pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 - Realtime SSE & Chat Events",
+      "item": [
+        {
+          "name": "MANUAL stream A (exclude from Runner)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications/stream",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"manualSse\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MANUAL stream B (exclude from Runner)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications/stream",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.variables.get(\"manualSse\")!==\"true\") pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trigger NEW_MESSAGE and NOTIFICATION",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/chat/send",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{conversationId}}\", \"messageContent\": \"Realtime {{runId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"realtimeMessageId\",pm.response.json().messageId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trigger TYPING",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/chat/typing",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"conversationId\": \"{{conversationId}}\", \"senderId\": \"{{idA}}\", \"typing\": true}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\",()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trigger MESSAGE_READ as B",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/chat/conversations/{{conversationId}}/read",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\",()=>pm.response.to.have.status(204));"
                 ]
               }
             }
