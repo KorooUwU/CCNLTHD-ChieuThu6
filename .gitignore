@@ -1,5 +1,20 @@
-*.log
+# Secrets and environments
 .env
 .env.local
+*.env.local
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Build and dependencies
+**/target/
+**/build/
+*.log
+
+# OS
 .DS_Store
 Thumbs.db
+# Temporary scratch scripts
+scratch/

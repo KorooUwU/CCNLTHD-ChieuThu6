@@ -11,6 +11,7 @@ interface SidebarProps {
   setActiveTab: (tab: "all" | "unread" | "group") => void;
   isLoading: boolean;
   onRefresh: () => void;
+  onOpenCreateGroup?: () => void;
 }
 
 export default function Sidebar({
@@ -21,6 +22,7 @@ export default function Sidebar({
   setActiveTab,
   isLoading,
   onRefresh,
+  onOpenCreateGroup,
 }: SidebarProps) {
   const filteredConversations = useMemo(() => {
     return conversations.filter((c) => {
@@ -32,10 +34,21 @@ export default function Sidebar({
 
   return (
     <aside className="w-full sm:w-80 md:w-96 border-r border-[#e4e6eb] flex flex-col h-[calc(100vh-56px)] bg-white select-none">
-      {/* HEADER SIDEBAR: TIÊU ĐỀ "ĐOẠN CHAT" & NÚT LÀM MỚI */}
+      {/* HEADER SIDEBAR: TIÊU ĐỀ "ĐOẠN CHAT" & NÚT LÀM MỚI & TẠO NHÓM */}
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-[#050505]">Đoạn chat</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {onOpenCreateGroup && (
+            <button
+              onClick={onOpenCreateGroup}
+              className="w-9 h-9 rounded-full bg-[#e7f3ff] hover:bg-[#d8ebff] flex items-center justify-center transition-colors text-[#0064d1] cursor-pointer"
+              title="Tạo nhóm chat mới"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            </button>
+          )}
           <button
             onClick={onRefresh}
             className="w-9 h-9 rounded-full bg-[#f0f2f5] hover:bg-[#e4e6eb] flex items-center justify-center transition-colors text-[#050505] cursor-pointer"
@@ -127,9 +140,16 @@ export default function Sidebar({
                 </div>
 
                 <div className="flex-1 min-w-0 pr-4">
-                  <h4 className="text-[15px] font-semibold text-[#050505] truncate leading-tight">
-                    {c.name}
-                  </h4>
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="text-[15px] font-semibold text-[#050505] truncate leading-tight">
+                      {c.name}
+                    </h4>
+                    {c.isGroup && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#e7f3ff] text-[#0064d1] shrink-0">
+                        Nhóm
+                      </span>
+                    )}
+                  </div>
                   <p className={`text-[13px] truncate mt-0.5 ${c.unread ? "text-[#050505] font-semibold" : "text-[#65676b]"}`}>
                     {c.lastMessage}
                   </p>
