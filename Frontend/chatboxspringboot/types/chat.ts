@@ -1,6 +1,8 @@
 export interface Message {
   id: string;
   sender: "me" | "partner";
+  senderName?: string;
+  senderId?: string;
   text: string;
   time: string;
   type?: "text" | "image" | "file";
@@ -18,6 +20,8 @@ export interface Conversation {
   unread: boolean;
   online?: boolean;
   isGroup?: boolean;
+  memberCount?: number;
+  partnerId?: string;
   messages: Message[];
 }
 
@@ -39,3 +43,15 @@ export interface AuthResponse {
   tokenType: string;
   expiresIn: number;
 }
+
+export interface AppNotification {
+  notificationId: string;
+  type: string;
+  isRead: boolean;
+  senderId?: string;
+  senderName?: string;
+  messageContent?: string;
+  conversationId?: string;
+  sendAt: string;
+}
+

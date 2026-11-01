@@ -173,3 +173,79 @@ export async function fetchMessagesApi(conversationId: string): Promise<any[]> {
   return Array.isArray(data) ? data : [];
 }
 
+export async function createGroupConversation(
+  groupName: string,
+  memberIds: string[]
+): Promise<any> {
+  const res = await fetch("/api/conversations/groups", {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ groupName, memberIds }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.errorMessage || data.message || data.error || "Lỗi tạo nhóm chat");
+  }
+  return data;
+}
+
+export async function fetchNotifications(): Promise<any[]> {
+  const res = await fetch("/api/notifications", {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchUnreadNotificationCount(): Promise<number> {
+  try {
+    const res = await fetch("/api/notifications/unread-count", {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return data.unreadCount || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  try {
+    await fetch("/api/notifications/read-all", {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+  } catch (err) {
+    console.error("Lỗi đánh dấu đã đọc thông báo:", err);
+  }
+}
+
+export async function markNotificationAsRead(notificationId: string): Promise<void> {
+  try {
+    await fetch("/api/notifications/read", {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ notificationId }),
+    });
+  } catch (err) {
+    console.warn("Lỗi đánh dấu thông báo đã đọc:", err);
+  }
+}
+
+export async function markNotificationsReadBySender(senderId: string): Promise<void> {
+  try {
+    await fetch(`/api/notifications/read-by-sender/${senderId}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+  } catch (err) {
+    console.warn("Lỗi đánh dấu thông báo theo người gửi đã đọc:", err);
+  }
+}
+
+
+
+

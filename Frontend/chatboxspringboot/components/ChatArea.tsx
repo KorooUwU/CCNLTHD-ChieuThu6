@@ -65,11 +65,18 @@ export default function ChatArea({
             )}
           </div>
           <div>
-            <h3 className="font-bold text-[15px] text-[#050505] leading-tight">
-              {conversation.name}
-            </h3>
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-bold text-[15px] text-[#050505] leading-tight">
+                {conversation.name}
+              </h3>
+              {conversation.isGroup && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#e7f3ff] text-[#0064d1]">
+                  Nhóm
+                </span>
+              )}
+            </div>
             <p className="text-[12px] text-emerald-600 font-medium">
-              Đang kết nối Supabase
+              {conversation.isGroup ? "Đoạn chat nhóm · Realtime" : "Đang kết nối Supabase"}
             </p>
           </div>
         </div>
@@ -105,7 +112,9 @@ export default function ChatArea({
             />
           </div>
           <h4 className="font-bold text-[#050505] text-base">{conversation.name}</h4>
-          <p className="text-xs text-[#65676b] mt-0.5">Cuộc trò chuyện thực tế trong CSDL Supabase</p>
+          <p className="text-xs text-[#65676b] mt-0.5">
+            {conversation.isGroup ? "Nhóm trò chuyện nhiều thành viên" : "Cuộc trò chuyện thực tế trong CSDL Supabase"}
+          </p>
         </div>
 
         {conversation.messages.map((m) => {
@@ -124,7 +133,12 @@ export default function ChatArea({
               )}
 
               {/* TIN NHẮN (ẢNH / VĂN BẢN / HOẶC CẢ HAI) */}
-              <div className={`flex flex-col gap-1 max-w-[70%] sm:max-w-sm ${isMe ? "items-end" : "items-start"}`}>
+              <div className={`flex flex-col gap-0.5 max-w-[70%] sm:max-w-sm ${isMe ? "items-end" : "items-start"}`}>
+                {!isMe && conversation.isGroup && m.senderName && (
+                  <span className="text-[11px] font-semibold text-[#65676b] px-1">
+                    {m.senderName}
+                  </span>
+                )}
                 {m.imageUrl && (
                   <div className="w-full rounded-2xl overflow-hidden border border-[#e4e6eb] shadow-sm bg-white">
                     <img

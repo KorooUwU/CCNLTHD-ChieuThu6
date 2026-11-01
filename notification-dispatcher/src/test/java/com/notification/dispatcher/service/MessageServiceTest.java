@@ -25,6 +25,8 @@ class MessageServiceTest {
     private MessageRepository messageRepository;
     private ConversationRepository conversationRepository;
     private TaiKhoanRepository taiKhoanRepository;
+    private com.notification.dispatcher.repository.NotificationRepository notificationRepository;
+    private com.notification.dispatcher.rabbitmq.RabbitMQProducer rabbitMQProducer;
     private MessageService service;
 
     @BeforeEach
@@ -32,7 +34,9 @@ class MessageServiceTest {
         messageRepository = mock(MessageRepository.class);
         conversationRepository = mock(ConversationRepository.class);
         taiKhoanRepository = mock(TaiKhoanRepository.class);
-        service = new MessageService(messageRepository, conversationRepository, taiKhoanRepository);
+        notificationRepository = mock(com.notification.dispatcher.repository.NotificationRepository.class);
+        rabbitMQProducer = mock(com.notification.dispatcher.rabbitmq.RabbitMQProducer.class);
+        service = new MessageService(messageRepository, conversationRepository, taiKhoanRepository, notificationRepository, rabbitMQProducer);
     }
 
     @Test

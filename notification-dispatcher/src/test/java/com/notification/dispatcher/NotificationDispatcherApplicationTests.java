@@ -15,7 +15,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@SpringBootTest(useMainMethod = SpringBootTest.UseMainMethod.ALWAYS)
+@SpringBootTest(useMainMethod = SpringBootTest.UseMainMethod.ALWAYS,
+        properties = {"spring.rabbitmq.listener.simple.auto-startup=false"})
 class NotificationDispatcherApplicationTests {
 
     @Autowired
