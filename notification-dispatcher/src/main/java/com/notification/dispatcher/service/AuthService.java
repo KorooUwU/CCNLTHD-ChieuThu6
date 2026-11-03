@@ -1,17 +1,22 @@
 package com.notification.dispatcher.service;
 
 import com.notification.dispatcher.DTO.CreateUserRequestDTO;
+import com.notification.dispatcher.DTO.UpdateUserRequestDTO;
 import com.notification.dispatcher.DTO.UserResponseDTO;
+import com.notification.dispatcher.DTO.UserSummaryDTO;
 import com.notification.dispatcher.entity.TaiKhoan;
 import com.notification.dispatcher.exception.DuplicateAccountException;
 import com.notification.dispatcher.repository.TaiKhoanRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.util.List;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -84,5 +89,60 @@ public class AuthService {
                 .userName(user.getUserName())
                 .createdAt(user.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * Cập nhật tên hiển thị của người dùng (PATCH /api/users/me).
+     * Chỉ cập nhật các trường được cung cấp (không null, không blank).
+     *
+     * @param userId  UUID của người dùng đang đăng nhập
+     * @param request DTO chứa các trường muốn cập nhật
+     * @return UserResponseDTO sau khi cập nhật
+     */
+    @Transactional
+    public UserResponseDTO updateMe(UUID userId, UpdateUserRequestDTO request) {
+        TaiKhoan user = taiKhoanRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Tài khoản không tồn tại"));
+
+        if (request.getTenTaiKhoan() != null && !request.getTenTaiKhoan().isBlank()) {
+            user.setTenTaiKhoan(request.getTenTaiKhoan().trim());
+        }
+
+        user = taiKhoanRepository.save(user);
+
+        return UserResponseDTO.builder()
+                .id(user.getId().toString())
+                .tenTaiKhoan(user.getTenTaiKhoan())
+                .email(user.getEmail())
+                .userName(user.getUserName())
+                .createdAt(user.getCreatedAt())
+                .build();
+    }
+
+    /**
+     * Tìm kiếm người dùng theo keyword trong userName (GET /api/users/search).
+     * Giới hạn 20 kết quả, chỉ trả về thông tin công khai.
+     *
+     * @param keyword từ khóa tìm kiếm (bắt buộc, không được để trống)
+     * @return danh sách UserSummaryDTO khớp với keyword
+     */
+    @Transactional(readOnly = true)
+    public List<UserSummaryDTO> searchUsers(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            throw new IllegalArgumentException("Keyword tìm kiếm không được để trống");
+        }
+        String safeKeyword = keyword.trim();
+        if (safeKeyword.length() < 2) {
+            throw new IllegalArgumentException("Keyword phải có ít nhất 2 ký tự");
+        }
+        return taiKhoanRepository
+                .searchByUserNameContaining(safeKeyword, PageRequest.of(0, 20))
+                .stream()
+                .map(u -> UserSummaryDTO.builder()
+                        .id(u.getId().toString())
+                        .tenTaiKhoan(u.getTenTaiKhoan())
+                        .userName(u.getUserName())
+                        .build())
+                .toList();
     }
 }
