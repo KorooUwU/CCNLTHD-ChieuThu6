@@ -33,6 +33,10 @@ public class Notification {
     @JoinColumn(name = "triggered_by_user_id", nullable = false)
     private TaiKhoan triggeredBy;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "message_id")
+    private Message message;
+
     @Column(name = "type", nullable = false, length = 50)
     private String type;
 

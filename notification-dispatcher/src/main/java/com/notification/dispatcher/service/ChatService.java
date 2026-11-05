@@ -59,16 +59,13 @@ public class ChatService {
 
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại: " + conversationId));
+        requireDirectParticipant(conversation, senderId);
 
         TaiKhoan sender = taiKhoanRepository.findById(senderId)
                 .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại: " + senderId));
 
         // Kiểm tra sender có thuộc conversation không
         boolean isUser1 = conversation.getUser1().getId().equals(senderId);
-        boolean isUser2 = conversation.getUser2().getId().equals(senderId);
-        if (!isUser1 && !isUser2) {
-            throw new IllegalArgumentException("Bạn không phải thành viên của cuộc trò chuyện này");
-        }
 
         TaiKhoan recipient = isUser1 ? conversation.getUser2() : conversation.getUser1();
         Instant now = Instant.now();
@@ -90,6 +87,7 @@ public class ChatService {
         // 3. Tạo bản ghi Notification cho người nhận trong DB
         Notification notification = Notification.builder()
                 .recipient(recipient)
+                .message(message)
                 .triggeredBy(sender)
                 .type("CHAT_MESSAGE")
                 .read(false)
@@ -137,6 +135,7 @@ public class ChatService {
         UUID conversationId = UUID.fromString(event.getConversationId());
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại"));
+        requireDirectParticipant(conversation, senderId);
 
         TaiKhoan recipient = conversation.getUser1().getId().equals(senderId)
                 ? conversation.getUser2()
@@ -158,6 +157,7 @@ public class ChatService {
     public void markAsRead(UUID conversationId, UUID userId) {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại"));
+        requireDirectParticipant(conversation, userId);
 
         messageRepository.markAllMessagesAsRead(conversationId, userId);
 
@@ -217,12 +217,8 @@ public class ChatService {
     public List<MessageResponseDTO> getMessages(UUID conversationId, UUID userId, int page, int size) {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("Cuộc trò chuyện không tồn tại"));
+        requireDirectParticipant(conversation, userId);
 
-        boolean isMember = conversation.getUser1().getId().equals(userId)
-                || conversation.getUser2().getId().equals(userId);
-        if (!isMember) {
-            throw new IllegalArgumentException("Bạn không có quyền xem cuộc trò chuyện này");
-        }
 
         var pageRequest = PageRequest.of(page, size);
         return messageRepository.findByConversationIdOrderBySentAtDesc(conversationId, pageRequest)
@@ -308,4 +304,13 @@ public class ChatService {
                 .isRead(message.isRead())
                 .build();
     }
+    private void requireDirectParticipant(Conversation conversation, UUID userId) {
+        boolean member = (conversation.getUser1() != null && userId.equals(conversation.getUser1().getId()))
+                || (conversation.getUser2() != null && userId.equals(conversation.getUser2().getId()));
+        if (!member) throw new com.notification.dispatcher.exception.ConversationAccessDeniedException();
+        if (conversation.getType() == com.notification.dispatcher.entity.ConversationType.GROUP) {
+            throw new IllegalArgumentException("Use the group message API");
+        }
+    }
+
 }

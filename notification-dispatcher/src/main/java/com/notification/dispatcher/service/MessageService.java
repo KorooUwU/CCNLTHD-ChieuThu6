@@ -113,6 +113,7 @@ public class MessageService {
         for (TaiKhoan recipient : recipients) {
             Notification notification = Notification.builder()
                     .recipient(recipient)
+                    .message(saved)
                     .triggeredBy(sender)
                     .type(notifType)
                     .read(false)
@@ -180,13 +181,13 @@ public class MessageService {
         if (conversation.getType() == ConversationType.GROUP) {
             boolean isMember = conversationRepository.isMember(conversation.getId(), userId);
             if (!isMember) {
-                throw new IllegalArgumentException("Bạn không phải thành viên của nhóm trò chuyện này");
+                throw new com.notification.dispatcher.exception.ConversationAccessDeniedException();
             }
         } else {
             boolean isParticipant = (conversation.getUser1() != null && conversation.getUser1().getId().equals(userId))
                     || (conversation.getUser2() != null && conversation.getUser2().getId().equals(userId));
             if (!isParticipant) {
-                throw new IllegalArgumentException("Bạn không tham gia cuộc hội thoại này");
+                throw new com.notification.dispatcher.exception.ConversationAccessDeniedException();
             }
         }
     }
